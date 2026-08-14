@@ -9,7 +9,7 @@ from .database import Database
 class DelayFuzzySystem:
 
     def __init__(self):
-
+        
         # ==========================
         # UNIVERSO DAS VARIÁVEIS
         # ==========================
@@ -49,82 +49,162 @@ class DelayFuzzySystem:
         rules = self.create_rules()
 
         print(f"{len(rules)} regras carregadas.")
+
+        # Analisa a base de regras
+        self.knowledge.analyze_rules()
+
         self.control_system = ctrl.ControlSystem(rules)
+
         self.simulation = ctrl.ControlSystemSimulation(
             self.control_system
         )
 
     def compute(self, context):
 
+       
         self.simulation.input["rain"] = context["rain"]
         self.simulation.input["traffic"] = context["traffic"]
         self.simulation.input["speed"] = context["speed"]
         self.simulation.input["road"] = context["road_flow"]
 
-        self.simulation.compute()
+        print("\n==============================")
+        print("CONTEXTO")
+        print("==============================")
+        print(context)
 
-        print("\nSaída da simulação:")
-        print(self.simulation.output)
+        variables = [
+            ("RAIN", self.rain, context["rain"]),
+            ("TRAFFIC", self.traffic, context["traffic"]),
+            ("ROAD", self.road, context["road_flow"]),
+            ("SPEED", self.speed, context["speed"])
+        ]
 
-        return self.simulation.output["delay"]
+        for name, variable, value in variables:
 
-if __name__ == "__main__":
+            print(f"\n{name} = {value}")
 
-    print("Criando sistema...")
+            for term in variable.terms:
 
-    fuzzy = DelayFuzzySystem()
+                degree = fuzz.interp_membership(
+                    variable.universe,
+                    variable[term].mf,
+                    value
+                )
 
-    tests = [
+                print(
+                    f"{term:<12} -> {degree:.3f}"
+                )
 
-        {
-            "name": "Condições ideais",
-            "context": {
-                "rain": 0,
-                "traffic": 0,
-                "speed": 0,
-                "road_flow": 0
+        # ==================================================
+        # VERIFICAR ATIVAÇÃO DAS REGRAS
+        # ==================================================
+
+        activated_rules = []
+
+        print("\n==============================")
+        print("ATIVAÇÃO DAS REGRAS")
+        print("==============================")
+
+        for rule in self.knowledge.rules:
+
+            values = []
+
+            for condition in rule["conditions"]:
+
+                variable_name = condition["variable"]
+                term = condition["term"]
+
+                if variable_name == "Rain":
+                    variable = self.rain
+                    value = context["rain"]
+
+                elif variable_name == "Traffic":
+                    variable = self.traffic
+                    value = context["traffic"]
+
+                elif variable_name == "Road":
+                    variable = self.road
+                    value = context["road_flow"]
+
+                elif variable_name == "Speed":
+                    variable = self.speed
+                    value = context["speed"]
+
+                mu = fuzz.interp_membership(
+                    variable.universe,
+                    variable[term].mf,
+                    value
+                )
+
+                values.append(mu)
+
+            activation = min(values)
+
+            print(
+                f'{rule["id"]:<5} '
+                f'-> {activation:.3f} '
+                f'({rule["output"]})'
+            )
+
+            if activation > 0:
+
+                activated_rules.append({
+                    "id": rule["id"],
+                    "output": rule["output"],
+                    "activation": activation
+                })
+
+        # ==================================================
+        # NENHUMA REGRA ATIVADA
+        # ==================================================
+
+        if not activated_rules:
+
+            print("\n==============================")
+            print("FALLBACK")
+            print("==============================")
+
+            print(
+                "Nenhuma regra fuzzy foi ativada."
+            )
+
+            print(
+                "Aplicando valor neutro: 50.0"
+            )
+
+            return {
+                "delay": 50.0,
+                "fallback": True,
+                "activated_rules": []
             }
-        },
 
-        {
-            "name": "Condições médias",
-            "context": {
-                "rain": 50,
-                "traffic": 50,
-                "speed": 50,
-                "road_flow": 50
+        # ==================================================
+        # INFERÊNCIA FUZZY
+        # ==================================================
+
+        try:
+
+            self.simulation.compute()
+
+            print("\nSaída da simulação:")
+            print(self.simulation.output)
+
+            return {
+                "delay": self.simulation.output["delay"],
+                "fallback": False,
+                "activated_rules": activated_rules
             }
-        },
 
-        {
-            "name": "Condições ruins",
-            "context": {
-                "rain": 80,
-                "traffic": 90,
-                "speed": 85,
-                "road_flow": 50
-            }
-        },
+        except Exception as e:
 
-        {
-            "name": "Trânsito intenso",
-            "context": {
-                "rain": 10,
-                "traffic": 95,
-                "speed": 80,
-                "road_flow": 70
-            }
-        }
+            print("\n==============================")
+            print("ERRO NA INFERÊNCIA")
+            print("==============================")
 
-    ]
+            print("Contexto:")
+            print(context)
 
-    for test in tests:
+            print("Output:")
+            print(self.simulation.output)
 
-        result = fuzzy.compute(test["context"])
-
-        print(f'{test["name"]}: {result:.2f}')
-
-   # print("Abrindo gráficos...")
-   # fuzzy.show_memberships()
-   # print("Fim.")
-   # input("Pressione ENTER para sair...")
+            raise e
