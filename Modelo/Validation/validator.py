@@ -336,7 +336,7 @@ def print_report(results):
     for result in results:
 
         if result["passed"]:
-
+            
             status = "PASS"
             passed += 1
         #print( "passou for if 1.txt")
